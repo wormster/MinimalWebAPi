@@ -45,12 +45,12 @@ app.MapGet("/", async (MinimalApiDb db) => {
     await db.SaveChangesAsync();
 
     return "This a demo for JWT Authentication using Minimalist Web API. Users loaded";
-}
-);
+});
 
 app.MapPost("/login", [AllowAnonymous] async (HttpContext http, ITokenService tokenService, IUserRepositoryService userRepositoryService) => {
     var userModel = await http.Request.ReadFromJsonAsync<User>();
     var userDto = userRepositoryService.GetUser(userModel);
+    
     if (userDto == null)
     {
         http.Response.StatusCode = 401;
@@ -65,15 +65,15 @@ app.MapPost("/login", [AllowAnonymous] async (HttpContext http, ITokenService to
 app.MapGet("/doaction", () => Results.Ok())
     .AllowAnonymous();
 
-app.MapGet("/devaction", (Func<string>)([Authorize(Roles = "Developer")]() => "Dev Action Succeeded"));
+app.MapGet("/devaction", [Authorize(Roles = "Developer")]() => "Dev Action Succeeded");
 
-app.MapGet("/mgraction", (Func<string>)([Authorize(Roles = "Manager")]() => "Manager Action Succeeded"));
+app.MapGet("/mgraction", [Authorize(Roles = "Manager")]() => "Manager Action Succeeded");
 
-app.MapGet("/bossaction", ([Authorize(Roles = "Boss")](HttpContext httpContext, ClaimsPrincipal user) => {
+app.MapGet("/bossaction", [Authorize(Roles = "Boss")](HttpContext httpContext, ClaimsPrincipal user) => {
     var claims = httpContext.User.Claims;
     var first = user.FindFirstValue(ClaimTypes.Role);
     return "Boss Action Succeeded.";
-}));
+});
 
 await app.RunAsync();
 
