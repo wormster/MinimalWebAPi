@@ -22,6 +22,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
     };
 });
 
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
 await using var app = builder.Build();
 
 app.UseAuthentication();
@@ -32,6 +35,8 @@ if (app.Environment.IsDevelopment())
     app.UseDeveloperExceptionPage();
 }
 
+app.UseSwagger();
+
 app.MapGet("/", async (MinimalApiDb db) => {
 
     List<User> users = new List<User>();
@@ -41,29 +46,34 @@ app.MapGet("/", async (MinimalApiDb db) => {
     users.Add(new(4, "Harry Wormald", "harry", "P@ssw0rd!", "Developer"));
     users.Add(new(5, "Rosie Wormald", "rosie", "P@ssw0rd!", "Our Pet Dog"));
 
-    db.Users.AddRange(users);
+    await db.Users.AddRangeAsync(users);
     await db.SaveChangesAsync();
 
-    return "This a demo for JWT Authentication using Minimalist Web API. Users loaded";
+    return Results.Ok("This a demo for JWT Authentication using Minimalist Web API. Users loaded");
 });
 
-app.MapPost("/login", [AllowAnonymous] async (HttpContext http, ITokenService tokenService, IUserRepositoryService userRepositoryService) => {
+app.MapPost("/login", Login);
+
+[AllowAnonymous]
+async Task Login(HttpContext http, ITokenService tokenService, IUserRepositoryService userRepositoryService)
+{
     var userModel = await http.Request.ReadFromJsonAsync<User>();
-    var userDto = userRepositoryService.GetUser(userModel);
-    
+    var userDto = await userRepositoryService.GetUser(userModel);
+
     if (userDto == null)
     {
-        http.Response.StatusCode = 401;
+        http.Response.StatusCode = StatusCodes.Status401Unauthorized;
         return;
     }
 
     var token = tokenService.BuildToken(builder.Configuration["Jwt:Key"], builder.Configuration["Jwt:Issuer"], builder.Configuration["Jwt:Audience"], userDto);
     await http.Response.WriteAsJsonAsync(new { token = token });
     return;
-});
+}
 
 app.MapGet("/doaction", () => Results.Ok())
-    .AllowAnonymous();
+    .AllowAnonymous()
+    .WithName("do_action");
 
 app.MapGet("/devaction", [Authorize(Roles = "Developer")]() => "Dev Action Succeeded");
 
@@ -71,9 +81,11 @@ app.MapGet("/mgraction", [Authorize(Roles = "Manager")]() => "Manager Action Suc
 
 app.MapGet("/bossaction", [Authorize(Roles = "Boss")](HttpContext httpContext, ClaimsPrincipal user) => {
     var claims = httpContext.User.Claims;
-    var first = user.FindFirstValue(ClaimTypes.Role);
-    return "Boss Action Succeeded.";
+    var firstClaim = user.FindFirstValue(ClaimTypes.Role);
+    return Results.Ok($"{firstClaim} Action Succeeded.");
 });
+
+app.UseSwaggerUI();
 
 await app.RunAsync();
 
@@ -83,19 +95,20 @@ public record User(int Id, string Name, [Required] string UserName, [Required] s
 
 public interface IUserRepositoryService
 {
-    UserDto GetUser(User userModel);
+    Task<UserDto> GetUser(User userModel);
 }
 
 public class UserRepositoryService : IUserRepositoryService
 {
     private readonly MinimalApiDb _db;
+
     public UserRepositoryService(MinimalApiDb db)
     {
         _db = db;
     }
-    public UserDto GetUser(User userModel)
+    public async Task<UserDto> GetUser(User userModel)
     {
-        var user = _db.Users.FirstOrDefault(x => string.Equals(x.UserName, userModel.UserName) && string.Equals(x.Password, userModel.Password));
+        var user = await _db.Users.FirstOrDefaultAsync(x => string.Equals(x.UserName, userModel.UserName) && string.Equals(x.Password, userModel.Password));
         var userDto = new UserDto(user.Id, user.Name, user.UserName, user.Password, user.Role);
         return userDto;
     }
@@ -105,6 +118,7 @@ public interface ITokenService
 {
     string BuildToken(string key, string issuer, string audience, UserDto user);
 }
+
 public class TokenService : ITokenService
 {
     private TimeSpan ExpiryDuration = new TimeSpan(0, 30, 0);
@@ -127,6 +141,7 @@ public class TokenService : ITokenService
         return new JwtSecurityTokenHandler().WriteToken(tokenDescriptor);
     }
 }
+
 public class MinimalApiDb : DbContext
 {
     public MinimalApiDb(DbContextOptions<MinimalApiDb> options)
