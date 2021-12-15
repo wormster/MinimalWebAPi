@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
@@ -37,6 +36,8 @@ if (app.Environment.IsDevelopment())
 
 app.UseSwagger();
 
+
+#region Define Endpoints
 app.MapGet("/", async (MinimalApiDb db) => {
 
     List<User> users = new List<User>();
@@ -84,68 +85,73 @@ app.MapGet("/bossaction", [Authorize(Roles = "Boss")](HttpContext httpContext, C
     var firstClaim = user.FindFirstValue(ClaimTypes.Role);
     return Results.Ok($"{firstClaim} Action Succeeded.");
 });
+#endregion
 
 app.UseSwaggerUI();
 
 await app.RunAsync();
 
-public record UserDto(int Id, string Name, string UserName, string Password, string Role);
-
-public record User(int Id, string Name, [Required] string UserName, [Required] string Password, string Role);
-
-public interface IUserRepositoryService
-{
-    Task<UserDto> GetUser(User userModel);
-}
-
-public class UserRepositoryService : IUserRepositoryService
-{
-    private readonly MinimalApiDb _db;
-
-    public UserRepositoryService(MinimalApiDb db)
+#region JWT
+    public interface ITokenService
     {
-        _db = db;
+        string BuildToken(string key, string issuer, string audience, UserDto user);
     }
-    public async Task<UserDto> GetUser(User userModel)
-    {
-        var user = await _db.Users.FirstOrDefaultAsync(x => string.Equals(x.UserName, userModel.UserName) && string.Equals(x.Password, userModel.Password));
-        var userDto = new UserDto(user.Id, user.Name, user.UserName, user.Password, user.Role);
-        return userDto;
-    }
-}
 
-public interface ITokenService
-{
-    string BuildToken(string key, string issuer, string audience, UserDto user);
-}
-
-public class TokenService : ITokenService
-{
-    private TimeSpan ExpiryDuration = new TimeSpan(0, 30, 0);
-    public string BuildToken(string key, string issuer, string audience, UserDto user)
+    public class TokenService : ITokenService
     {
-        var claims = new[]
+        private TimeSpan ExpiryDuration = new TimeSpan(0, 30, 0);
+        public string BuildToken(string key, string issuer, string audience, UserDto user)
         {
-                new Claim(ClaimTypes.Name, user.UserName),
-                new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()),
-                new Claim(ClaimTypes.Role, user.Role)
-             };
+            var claims = new[]
+            {
+                    new Claim(ClaimTypes.Name, user.UserName),
+                    new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()),
+                    new Claim(ClaimTypes.Role, user.Role)
+                 };
 
-        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
+            var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
 
-        var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
-        
-        var tokenDescriptor = new JwtSecurityToken(issuer, audience, claims,
-            expires: DateTime.Now.Add(ExpiryDuration), signingCredentials: credentials);
-        
-        return new JwtSecurityTokenHandler().WriteToken(tokenDescriptor);
+            var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+
+            var tokenDescriptor = new JwtSecurityToken(issuer, audience, claims,
+                expires: DateTime.Now.Add(ExpiryDuration), signingCredentials: credentials);
+
+            return new JwtSecurityTokenHandler().WriteToken(tokenDescriptor);
+        }
     }
-}
+#endregion
 
-public class MinimalApiDb : DbContext
-{
-    public MinimalApiDb(DbContextOptions<MinimalApiDb> options)
-        : base(options) { }
+#region Data Access
+    public record UserDto(int Id, string Name, string UserName, string Password, string Role);
 
-    public DbSet<User> Users => Set<User>();
-}
+    public record User(int Id, string Name, [Required] string UserName, [Required] string Password, string Role);
+
+    public interface IUserRepositoryService
+    {
+        Task<UserDto> GetUser(User userModel);
+    }
+
+    public class UserRepositoryService : IUserRepositoryService
+    {
+        private readonly MinimalApiDb _db;
+
+        public UserRepositoryService(MinimalApiDb db)
+        {
+            _db = db;
+        }
+        public async Task<UserDto> GetUser(User userModel)
+        {
+            var user = await _db.Users.FirstOrDefaultAsync(x => string.Equals(x.UserName, userModel.UserName) && string.Equals(x.Password, userModel.Password));
+            var userDto = new UserDto(user.Id, user.Name, user.UserName, user.Password, user.Role);
+            return userDto;
+        }
+    }
+
+    public class MinimalApiDb : DbContext
+    {
+        public MinimalApiDb(DbContextOptions<MinimalApiDb> options)
+            : base(options) { }
+
+        public DbSet<User> Users => Set<User>();
+    }
+#endregion
