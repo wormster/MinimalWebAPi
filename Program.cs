@@ -1,5 +1,17 @@
 
+using Microsoft.AspNetCore.HttpLogging;
+
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddHttpLogging(logging =>
+{
+    logging.LoggingFields = HttpLoggingFields.All;
+    logging.RequestHeaders.Add("X-Request-Header");
+    logging.RequestHeaders.Add("X-Response-Header");
+    logging.RequestBodyLogLimit = 4096;
+    logging.ResponseBodyLogLimit = 4096;
+});
+
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 builder.Services.AddDbContext<MinimalApiDb>(opt => opt.UseInMemoryDatabase("MinimalApiDb"));
 
@@ -26,6 +38,7 @@ builder.Services.AddSwaggerGen();
 
 await using var app = builder.Build();
 
+app.UseHttpLogging();
 app.UseAuthentication();
 app.UseAuthorization();
 
