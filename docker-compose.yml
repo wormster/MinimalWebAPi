@@ -1,0 +1,8 @@
+version: '3.4'
+
+services:
+  minimalwebapi:
+    image: ${DOCKER_REGISTRY-}minimalwebapi
+    build:
+      context: .
+      dockerfile: Dockerfile
