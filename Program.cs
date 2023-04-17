@@ -1,4 +1,7 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.HttpLogging;
+using Microsoft.AspNetCore.Mvc;
 using MinimalWebAPi;
 using MinimalWebAPi.DataAccess;
 
@@ -15,7 +18,7 @@ builder.Services.AddHttpLogging(logging =>
 
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 builder.Services.AddDbContext<MinimalApiDb>(opt => opt.UseInMemoryDatabase("MinimalApiDb"));
-builder.Services.AddSingleton<ITokenService>(new TokenService());
+builder.Services.AddSingleton<ITokenService, TokenService>();
 builder.Services.AddScoped<IUserRepositoryService, UserRepositoryService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddAuthorization(o => o.AddPolicy("BossOnly",
@@ -56,6 +59,8 @@ app.UseSwagger();
 
 app.MapGet("/", LoadUsers);
 app.MapPost("/login", Login).AllowAnonymous();
+app.MapPost("/refresh", Refresh).RequireAuthorization();
+app.MapPost("/revoke", Revoke).RequireAuthorization();
 app.MapGet("/anon", () => Results.Ok("Anonymous action")).AllowAnonymous().WithName("anonymous_action");
 
 RouteGroupBuilder actions = app.MapGroup("/actions").RequireAuthorization();
@@ -72,21 +77,90 @@ async Task<IResult> LoadUsers(IUserService userService)
     return Results.Ok("This a demo for JWT Authentication using Minimalist Web API. Users loaded");
 }
 
-async Task Login(HttpContext http, IUserService userService)
+async Task<IResult> Login(HttpContext http, IUserService userService, ITokenService tokenService)
 {
     var userModel = await http.Request.ReadFromJsonAsync<User>();
 
-    var token = await userService.UserJwt(userModel);
-
-    if (string.IsNullOrWhiteSpace(token))
+    if (userModel is null)
     {
-        http.Response.StatusCode = StatusCodes.Status401Unauthorized;
-        return;
+        return Results.BadRequest("Invalid client request");
     }
 
-    await http.Response.WriteAsJsonAsync(new { token = token });
+    var userDto = await userService.GetUser(userModel);
+
+    if (userDto is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var claims = new List<Claim>
+    {
+        new Claim(ClaimTypes.Name, userDto.UserName),
+        new Claim(ClaimTypes.Role, userDto.Role)
+    };
+
+    var accessToken = tokenService.GenerateAccessToken(claims);
+    var refreshToken = tokenService.GenerateRefreshToken();
+
+    userDto.RefreshToken = refreshToken;
+    userDto.RefreshTokenExpiryTime = DateTime.Now.AddHours(1);
+
+    await userService.SaveUser(userDto);
+
+    if (string.IsNullOrWhiteSpace(accessToken))
+    {
+        http.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return Results.Unauthorized();
+    }
+
+    return Results.Ok(new AuthenticatedResponse
+    {
+        Token = accessToken,
+        RefreshToken = refreshToken
+    });
 }
 
+async static Task<IResult> Refresh(TokenApiModel tokenApiModel, HttpContext httpContext, IUserService userService, ITokenService tokenService)
+{
+    if (tokenApiModel is null)
+        return Results.BadRequest("Invalid client request");
+
+    string accessToken = tokenApiModel.AccessToken;
+    string refreshToken = tokenApiModel.RefreshToken;
+
+    var principal = tokenService.GetPrincipalFromExpiredToken(accessToken);
+
+    var username = principal.Identity.Name; //this is mapped to the Name claim by default
+
+    var user = await userService.GetUserByUserName(httpContext.User.Identity.Name);
+
+    if (user is null || user.RefreshToken != refreshToken || user.RefreshTokenExpiryTime <= DateTime.Now)
+        return Results.BadRequest("Invalid client request");
+
+    var newAccessToken = tokenService.GenerateAccessToken(principal.Claims);
+    var newRefreshToken = tokenService.GenerateRefreshToken();
+    user.RefreshToken = newRefreshToken;
+
+    await userService.SaveUser(user);
+
+    return Results.Ok(new AuthenticatedResponse()
+    {
+        Token = newAccessToken,
+        RefreshToken = newRefreshToken
+    });
+}
+
+async static Task<IResult> Revoke(HttpContext httpContext, IUserService userService)
+{
+    var user = await userService.GetUserByUserName(httpContext.User.Identity.Name);
+
+    if (user == null) return Results.BadRequest();
+
+    user.RefreshToken = null;
+    await userService.SaveUser(user);
+
+    return Results.NoContent();
+}
 static async Task<IResult> DevAction(HttpContext httpContext, ClaimsPrincipal claimsPrincipal, IUserService userService)
 {
     var claims = httpContext.User.Claims;
