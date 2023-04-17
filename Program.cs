@@ -113,9 +113,9 @@ async Task<IResult> Login(HttpContext http, IUserService userService, ITokenServ
         return Results.Unauthorized();
     }
 
-    return Results.Ok(new AuthenticatedResponse
+    return Results.Ok(new TokenApiModel
     {
-        Token = accessToken,
+        AccessToken = accessToken,
         RefreshToken = refreshToken
     });
 }
@@ -143,9 +143,9 @@ async static Task<IResult> Refresh(TokenApiModel tokenApiModel, HttpContext http
 
     await userService.SaveUser(user);
 
-    return Results.Ok(new AuthenticatedResponse()
+    return Results.Ok(new TokenApiModel()
     {
-        Token = newAccessToken,
+        AccessToken = newAccessToken,
         RefreshToken = newRefreshToken
     });
 }
