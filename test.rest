@@ -1,0 +1,26 @@
+
+
+@token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1lIjoiZGljayIsImh0dHA6Ly9zY2hlbWFzLm1pY3Jvc29mdC5jb20vd3MvMjAwOC8wNi9pZGVudGl0eS9jbGFpbXMvcm9sZSI6IkRldmVsb3BlciIsImV4cCI6MTY4NTc5ODU5NCwiaXNzIjoiaHR0cHM6Ly9sb2NhbGhvc3Q6NzAxOCIsImF1ZCI6Imh0dHBzOi8vbG9jYWxob3N0OjcwMTgifQ._n_DNU6AF7jV9wzwYmAGqhaAn1KlaVvUvg9xNj32vcY
+
+@baseUrl=https://localhost:7018
+
+###
+
+GET {{baseUrl}}/anon
+
+###
+
+POST {{baseUrl}}/login
+Content-Type: application/json
+
+{
+    "Username": "dick",
+    "Password": "P@55w0rd!"
+}
+
+###
+
+GET {{baseUrl}}/actions/dev
+Authorization: Bearer {{token}}
+
+
